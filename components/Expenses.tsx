@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Expense, LogCategory } from '../types';
-import { Wallet, TrendingDown, X, Plus, Calendar } from 'lucide-react';
+import { Wallet, TrendingDown, X, Plus, Calendar, Search } from 'lucide-react';
 
 interface ExpensesProps {
   expenses: Expense[];
@@ -12,6 +12,10 @@ interface ExpensesProps {
 export const Expenses: React.FC<ExpensesProps> = ({ expenses, onUpdateExpenses, onLog }) => {
   const [newExpenseDesc, setNewExpenseDesc] = useState('');
   const [newExpenseAmount, setNewExpenseAmount] = useState('');
+  
+  // FILTERS
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterDate, setFilterDate] = useState(''); // Stores YYYY-MM for month filter
 
   const handleAddExpense = () => {
       if(!newExpenseDesc || !newExpenseAmount) return;
@@ -35,7 +39,17 @@ export const Expenses: React.FC<ExpensesProps> = ({ expenses, onUpdateExpenses, 
       }
   }
 
-  const totalExpenses = expenses.reduce((acc, curr) => acc + curr.amount, 0);
+  const filteredExpenses = expenses.filter(exp => {
+      const matchesSearch = exp.description.toLowerCase().includes(searchTerm.toLowerCase());
+      let matchesDate = true;
+      if (filterDate) {
+          const expDate = exp.date.substring(0, 7); // YYYY-MM
+          matchesDate = expDate === filterDate;
+      }
+      return matchesSearch && matchesDate;
+  });
+
+  const totalFilteredExpenses = filteredExpenses.reduce((acc, curr) => acc + curr.amount, 0);
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in pb-20">
@@ -44,10 +58,12 @@ export const Expenses: React.FC<ExpensesProps> = ({ expenses, onUpdateExpenses, 
         <div className="bg-gradient-to-r from-red-500 to-rose-600 rounded-2xl p-6 text-white shadow-lg shadow-rose-200">
              <div className="flex items-center gap-3 mb-2 opacity-90">
                 <Wallet className="w-6 h-6" />
-                <span className="font-medium text-lg">Total des Sorties de Caisse</span>
+                <span className="font-medium text-lg">
+                    {filterDate ? `Total Sorties (${filterDate})` : 'Total des Sorties de Caisse'}
+                </span>
              </div>
              <div className="text-4xl font-bold">
-                {totalExpenses.toLocaleString('fr-FR')} FCFA
+                {totalFilteredExpenses.toLocaleString('fr-FR')} FCFA
              </div>
              <p className="text-sm mt-2 opacity-80">
                 Ces montants sont déduits de votre caisse réelle mais n'affectent pas le chiffre d'affaires des ventes.
@@ -94,17 +110,38 @@ export const Expenses: React.FC<ExpensesProps> = ({ expenses, onUpdateExpenses, 
 
         {/* History List */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-             <div className="p-4 border-b border-slate-100 bg-slate-50/50 font-semibold text-slate-700">
-                Historique des dépenses
+             {/* Header with Filters */}
+             <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-col md:flex-row justify-between items-center gap-4">
+                <div className="font-semibold text-slate-700">Historique des dépenses</div>
+                
+                <div className="flex gap-2 w-full md:w-auto">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                        <input 
+                            type="text" 
+                            placeholder="Rechercher..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full pl-9 pr-3 py-2 bg-white text-slate-900 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-rose-400"
+                        />
+                    </div>
+                    <input 
+                        type="month"
+                        value={filterDate}
+                        onChange={(e) => setFilterDate(e.target.value)}
+                        className="px-3 py-2 bg-white text-slate-700 border border-slate-200 rounded-lg text-sm focus:outline-none"
+                        style={{ colorScheme: 'light' }}
+                    />
+                </div>
              </div>
              
              <div className="divide-y divide-slate-100">
-                {expenses.length === 0 ? (
+                {filteredExpenses.length === 0 ? (
                     <div className="p-8 text-center text-slate-400 italic">
-                        Aucune dépense enregistrée.
+                        {expenses.length === 0 ? "Aucune dépense enregistrée." : "Aucune dépense ne correspond à vos filtres."}
                     </div>
                 ) : (
-                    [...expenses].reverse().map(exp => (
+                    [...filteredExpenses].reverse().map(exp => (
                         <div key={exp.id} className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors">
                             <div className="flex items-center gap-4">
                                 <div className="p-3 bg-red-50 text-red-600 rounded-lg">

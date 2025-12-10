@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ViewState, Product, Sale, Category, SaleItem, Client, Expense, PaymentMethodDef, LogEntry, LogCategory, User } from './types';
+import { ViewState, Product, Sale, Category, SaleItem, Client, Expense, PaymentMethodDef, LogEntry, LogCategory, User, SalePayment, SaleStatus } from './types';
 import { Dashboard } from './components/Dashboard';
 import { ProductList } from './components/ProductList';
 import { ImportTools } from './components/ImportTools';
@@ -98,9 +98,6 @@ const App: React.FC = () => {
 
   const [users, setUsers] = useState<User[]>(() => {
       const saved = localStorage.getItem('users');
-      // If we have saved users, merge them or use them, but if it's just the old default admin, we might want to inject the new defaults.
-      // For simplicity, if saved exists we use it, otherwise default. 
-      // User can reset via clearing cache if needed, or we assume this is a fresh start for the demo.
       return saved ? JSON.parse(saved) : DEFAULT_USERS;
   });
 
@@ -112,7 +109,7 @@ const App: React.FC = () => {
 
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethodDef[]>(() => {
       const saved = localStorage.getItem('paymentMethods');
-      if (saved) return JSON.parse(saved);
+      if (saved) return JSON.parse(saved) : DEFAULT_PAYMENT_METHODS;
       return DEFAULT_PAYMENT_METHODS;
   });
 
@@ -133,7 +130,28 @@ const App: React.FC = () => {
 
   const [sales, setSales] = useState<Sale[]>(() => {
     const saved = localStorage.getItem('sales');
-    return saved ? JSON.parse(saved) : [];
+    let loadedSales = saved ? JSON.parse(saved) : [];
+    
+    // MIGRATION: Ensure all sales have payments array and correct status
+    return loadedSales.map((s: any) => {
+        if (!s.payments || s.payments.length === 0) {
+            // Convert legacy single payment method to payments array
+            const method = s.paymentMethod || 'Espèces';
+            const initialPayment: SalePayment = {
+                id: 'pay_' + s.id,
+                amount: s.totalPrice,
+                method: method,
+                date: s.date
+            };
+            return {
+                ...s,
+                payments: [initialPayment],
+                balance: 0,
+                status: 'PAID'
+            };
+        }
+        return s;
+    });
   });
 
   const [clients, setClients] = useState<Client[]>(() => {
@@ -331,7 +349,15 @@ const App: React.FC = () => {
 
     if (editingProduct) {
         setProducts(products.map(p => p.id === editingProduct.id ? { ...p, ...finalProductData } : p));
-        logAction('STOCK', `Modification produit : ${finalProductData.name} (Qté: ${finalProductData.quantity}, Prix: ${finalProductData.price})`);
+        
+        // Detailed Logging for Edit
+        const changes: string[] = [];
+        if(editingProduct.price !== finalProductData.price) changes.push(`Prix (${editingProduct.price}➔${finalProductData.price})`);
+        if(editingProduct.quantity !== finalProductData.quantity) changes.push(`Stock (${editingProduct.quantity}➔${finalProductData.quantity})`);
+        if(editingProduct.name !== finalProductData.name) changes.push(`Nom modifié`);
+        
+        const changeMsg = changes.length > 0 ? changes.join(', ') : 'Mise à jour mineure';
+        logAction('STOCK', `Modification produit "${finalProductData.name}" : ${changeMsg}`);
     } else {
         const newProduct: Product = {
             ...finalProductData,
@@ -368,7 +394,7 @@ const App: React.FC = () => {
     setView('POS');
   };
 
-  const handleProcessSale = (items: SaleItem[], subTotal: number, discount: number, paymentMethod: string, client?: Client) => {
+  const handleProcessSale = (items: SaleItem[], subTotal: number, discount: number, paymentMethod: string, client?: Client, amountPaid?: number) => {
     // 1. Update Stock
     const updatedProducts = products.map(p => {
         const cartItem = items.find(i => i.productId === p.id);
@@ -379,7 +405,22 @@ const App: React.FC = () => {
     });
     setProducts(updatedProducts);
 
-    const total = subTotal - discount;
+    const total = Math.max(0, subTotal - discount);
+    
+    // Determine initial payment
+    // If amountPaid is undefined or greater than total, we assume full payment (change is given back)
+    // If amountPaid is LESS than total, it's a partial payment
+    const effectivePaid = amountPaid !== undefined && amountPaid < total ? amountPaid : total;
+    
+    const initialPayment: SalePayment = {
+        id: Date.now().toString() + '_p',
+        amount: effectivePaid,
+        method: paymentMethod,
+        date: new Date().toISOString()
+    };
+
+    const balance = total - effectivePaid;
+    const status: SaleStatus = balance <= 0 ? 'PAID' : 'PARTIAL';
 
     // 2. Create Sale Record
     const newSale: Sale = {
@@ -389,13 +430,17 @@ const App: React.FC = () => {
         discount: discount,
         totalPrice: total,
         date: new Date().toISOString(),
-        paymentMethod: paymentMethod,
+        paymentMethod: paymentMethod, // Legacy reference
+        payments: [initialPayment],
+        balance: balance,
+        status: status,
         clientId: client?.id,
         clientName: client?.name
     };
     setSales([...sales, newSale]);
 
-    logAction('VENTE', `Vente validée : ${total.toLocaleString()} F (${items.length} articles) - Paiement: ${paymentMethod} ${client ? '- Client: '+client.name : ''}`);
+    const statusMsg = status === 'PARTIAL' ? ` (Partiel - Reste: ${balance}F)` : '';
+    logAction('VENTE', `Vente validée : ${total.toLocaleString()} F (${items.length} articles) - Paiement: ${paymentMethod}${statusMsg}`);
   };
 
   // Sales Management Handlers
@@ -418,8 +463,67 @@ const App: React.FC = () => {
   };
 
   const handleUpdateSale = (updatedSale: Sale) => {
+      const oldSale = sales.find(s => s.id === updatedSale.id);
       setSales(sales.map(s => s.id === updatedSale.id ? updatedSale : s));
-      logAction('VENTE', `Modification vente : ${updatedSale.totalPrice.toLocaleString()} F`);
+      
+      // Detailed Logging for Sale Edit
+      if(oldSale) {
+          const changes: string[] = [];
+          if(oldSale.clientId !== updatedSale.clientId) changes.push(`Client (${oldSale.clientName || 'Aucun'} ➔ ${updatedSale.clientName || 'Aucun'})`);
+          if(oldSale.date !== updatedSale.date) changes.push(`Date modifiée`);
+          
+          const changeMsg = changes.length > 0 ? changes.join(', ') : 'Détails mis à jour';
+          logAction('VENTE', `Modification vente (${updatedSale.totalPrice.toLocaleString()} F) : ${changeMsg}`);
+      }
+  };
+
+  // PAYMENT MANAGEMENT (ADD / EDIT / DELETE)
+  const handleAddPaymentToSale = (saleId: string, payment: SalePayment) => {
+      const sale = sales.find(s => s.id === saleId);
+      if(!sale) return;
+
+      const newPayments = [...sale.payments, payment];
+      const totalPaid = newPayments.reduce((sum, p) => sum + p.amount, 0);
+      const balance = sale.totalPrice - totalPaid;
+      const status: SaleStatus = balance <= 0 ? 'PAID' : 'PARTIAL';
+
+      const updatedSale = { ...sale, payments: newPayments, balance, status };
+      setSales(sales.map(s => s.id === saleId ? updatedSale : s));
+      
+      logAction('FINANCE', `Règlement ajouté sur vente #${sale.id.slice(-4)} : +${payment.amount}F (${payment.method})`);
+  };
+
+  const handleDeletePaymentFromSale = (saleId: string, paymentId: string) => {
+      const sale = sales.find(s => s.id === saleId);
+      if(!sale) return;
+
+      const paymentToDelete = sale.payments.find(p => p.id === paymentId);
+      const newPayments = sale.payments.filter(p => p.id !== paymentId);
+      const totalPaid = newPayments.reduce((sum, p) => sum + p.amount, 0);
+      const balance = sale.totalPrice - totalPaid;
+      const status: SaleStatus = balance <= 0 ? 'PAID' : (totalPaid === 0 ? 'UNPAID' : 'PARTIAL');
+
+      const updatedSale = { ...sale, payments: newPayments, balance, status };
+      setSales(sales.map(s => s.id === saleId ? updatedSale : s));
+
+      if(paymentToDelete) {
+          logAction('FINANCE', `Règlement supprimé sur vente #${sale.id.slice(-4)} : -${paymentToDelete.amount}F`);
+      }
+  };
+
+  const handleUpdatePaymentInSale = (saleId: string, updatedPayment: SalePayment) => {
+      const sale = sales.find(s => s.id === saleId);
+      if(!sale) return;
+
+      const newPayments = sale.payments.map(p => p.id === updatedPayment.id ? updatedPayment : p);
+      const totalPaid = newPayments.reduce((sum, p) => sum + p.amount, 0);
+      const balance = sale.totalPrice - totalPaid;
+      const status: SaleStatus = balance <= 0 ? 'PAID' : 'PARTIAL';
+
+      const updatedSale = { ...sale, payments: newPayments, balance, status };
+      setSales(sales.map(s => s.id === saleId ? updatedSale : s));
+      
+      logAction('FINANCE', `Règlement modifié sur vente #${sale.id.slice(-4)}`);
   };
 
   // Get current category definition for dynamic form
@@ -670,6 +774,9 @@ const App: React.FC = () => {
                         paymentMethods={paymentMethods}
                         onDeleteSale={handleDeleteSale}
                         onUpdateSale={handleUpdateSale}
+                        onAddPayment={handleAddPaymentToSale}
+                        onDeletePayment={handleDeletePaymentFromSale}
+                        onUpdatePayment={handleUpdatePaymentInSale}
                     />
                 )}
                 
@@ -710,8 +817,7 @@ const App: React.FC = () => {
                 
                 <div className="overflow-y-auto p-6">
                     <form id="productForm" onSubmit={handleSaveProduct} className="space-y-5">
-                        
-                        {/* Image Upload */}
+                        {/* Form Content kept same as before */}
                         <div className="flex items-center gap-4">
                             <div className="w-20 h-20 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
                                 {formData.image ? (

@@ -8,7 +8,7 @@ interface POSProps {
   categories: Category[];
   clients: Client[];
   onAddClient: (client: Client) => void;
-  onProcessSale: (items: SaleItem[], subTotal: number, discount: number, paymentMethod: PaymentMethodType, client?: Client) => void;
+  onProcessSale: (items: SaleItem[], subTotal: number, discount: number, paymentMethod: PaymentMethodType, client?: Client, amountPaid?: number) => void;
   initialProductToAdd?: Product | null;
   shopName: string;
   paymentMethods: PaymentMethodDef[];
@@ -64,7 +64,11 @@ export const POS: React.FC<POSProps> = ({
   const subTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const discountAmount = parseFloat(discount) || 0;
   const finalTotal = Math.max(0, subTotal - discountAmount);
-  const changeDue = amountGiven ? parseFloat(amountGiven) - finalTotal : 0;
+  
+  const numericAmountGiven = parseFloat(amountGiven);
+  // If amount given is present and less than total, it's NOT a change situation, it's a partial payment
+  const isPartialPayment = !isNaN(numericAmountGiven) && numericAmountGiven < finalTotal;
+  const changeDue = !isNaN(numericAmountGiven) && numericAmountGiven > finalTotal ? numericAmountGiven - finalTotal : 0;
 
   const addToCart = (product: Product) => {
     setCart(prev => {
@@ -103,23 +107,26 @@ export const POS: React.FC<POSProps> = ({
     if (cart.length === 0) return;
     
     const client = clients.find(c => c.id === selectedClient);
+    const amountPaid = !isNaN(parseFloat(amountGiven)) ? parseFloat(amountGiven) : undefined;
 
-    const saleData: Sale = {
-        id: Date.now().toString(),
+    // Fake last sale for receipt (simplified)
+    const saleData: any = {
         items: [...cart],
         subTotal,
         discount: discountAmount,
         totalPrice: finalTotal,
         date: new Date().toISOString(),
         paymentMethod: method,
-        clientId: client?.id,
-        clientName: client?.name
+        clientName: client?.name,
+        // Status checks
+        status: isPartialPayment ? 'PARTIAL' : 'PAID',
+        balance: isPartialPayment && amountPaid ? finalTotal - amountPaid : 0
     };
 
-    onProcessSale(cart, subTotal, discountAmount, method, client);
+    onProcessSale(cart, subTotal, discountAmount, method, client, amountPaid);
     
     setLastSale(saleData);
-    setLastChangeDue(method === 'Espèces' && changeDue > 0 ? changeDue : 0);
+    setLastChangeDue(changeDue);
     
     setCart([]);
     setAmountGiven('');
@@ -255,7 +262,7 @@ export const POS: React.FC<POSProps> = ({
                  <button 
                     onClick={startCameraScan}
                     className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg flex items-center gap-2 text-sm font-medium border border-slate-200"
-                 >
+                >
                     <Camera className="w-4 h-4" />
                     Caméra
                  </button>
@@ -387,18 +394,27 @@ export const POS: React.FC<POSProps> = ({
                  <span className="font-bold text-2xl text-rose-600">{finalTotal.toLocaleString('fr-FR')} <span className="text-sm">FCFA</span></span>
              </div>
 
-             {/* Money Given (For Change Calculation) */}
+             {/* Money Given (For Change Calculation or Partial Payment) */}
              <div className="flex items-center gap-2">
                 <input 
                     type="number" 
                     value={amountGiven}
                     onChange={(e) => setAmountGiven(e.target.value)}
-                    placeholder="Montant reçu (Espèces)"
+                    placeholder="Montant reçu (vide = tout)"
                     className="flex-[2] pl-3 pr-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-slate-800 outline-none"
                 />
                 <div className={`flex-1 text-right p-2 rounded-lg border ${changeDue >= 0 ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
-                    <div className="text-[10px] font-bold uppercase opacity-70">Rendu</div>
-                    <div className="font-bold">{changeDue >= 0 ? changeDue.toLocaleString('fr-FR') : '---'}</div>
+                    {isPartialPayment ? (
+                         <>
+                            <div className="text-[10px] font-bold uppercase opacity-70 text-red-600">Dette</div>
+                            <div className="font-bold text-red-600">{(finalTotal - numericAmountGiven).toLocaleString('fr-FR')}</div>
+                         </>
+                    ) : (
+                         <>
+                            <div className="text-[10px] font-bold uppercase opacity-70">Rendu</div>
+                            <div className="font-bold">{changeDue >= 0 ? changeDue.toLocaleString('fr-FR') : '---'}</div>
+                         </>
+                    )}
                 </div>
              </div>
 
@@ -527,15 +543,24 @@ export const POS: React.FC<POSProps> = ({
                             </div>
                         )}
                         <div className="flex justify-between font-bold text-base mt-2 border-t border-slate-200 pt-2">
-                            <span>TOTAL</span>
+                            <span>TOTAL NET</span>
                             <span>{lastSale.totalPrice.toLocaleString('fr-FR')}</span>
                         </div>
                         
-                        <div className="mt-4 text-xs text-left space-y-1 text-slate-500">
-                            <div>Mode de paiement: <span className="font-bold uppercase">{lastSale.paymentMethod}</span></div>
-                            {lastSale.paymentMethod === 'Espèces' && (
+                        <div className="mt-4 text-xs text-left space-y-1 text-slate-500 border-t border-slate-200 pt-2">
+                            {lastSale.status === 'PARTIAL' ? (
+                                <div className="font-bold text-red-600 flex justify-between">
+                                    <span>PAIEMENT PARTIEL</span>
+                                    <span>Reste: {lastSale.balance.toLocaleString('fr-FR')}</span>
+                                </div>
+                            ) : (
+                                <div><span className="font-bold">PAYÉ</span> ({lastSale.paymentMethod})</div>
+                            )}
+
+                            {lastSale.paymentMethod === 'Espèces' && lastSale.status === 'PAID' && lastChangeDue > 0 && (
                                 <div>Monnaie rendue: {lastChangeDue.toLocaleString('fr-FR')}</div>
                             )}
+                            
                             {lastSale.clientName && (
                                 <div>Client: {lastSale.clientName}</div>
                             )}

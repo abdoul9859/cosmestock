@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { User, UserRole, LogCategory } from '../types';
-import { Shield, Plus, Trash2, User as UserIcon, Edit2, X, Save } from 'lucide-react';
+import { Shield, Plus, Trash2, User as UserIcon, Edit2, X, Save, Search } from 'lucide-react';
 
 interface UserManagementProps {
     users: User[];
@@ -23,6 +23,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
     const [editUsername, setEditUsername] = useState('');
     const [editPin, setEditPin] = useState('');
     const [editRole, setEditRole] = useState<UserRole>('CASHIER');
+
+    // Filter
+    const [searchTerm, setSearchTerm] = useState('');
 
     const handleAddUser = () => {
         if (!newName || !newUsername || !newPin) return;
@@ -100,15 +103,35 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
         setEditingUser(null);
     };
 
+    const filteredUsers = users.filter(u => 
+        u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        u.username.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
     return (
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
-            <h3 className="text-xl font-bold text-slate-800 mb-2 flex items-center gap-2">
-                <Shield className="w-6 h-6 text-indigo-600" />
-                Gestion des Utilisateurs
-            </h3>
-            <p className="text-slate-500 mb-6">
-                Gérez les comptes employés (Ajout, Modification, Suppression).
-            </p>
+            <div className="flex justify-between items-start mb-6">
+                <div>
+                    <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                        <Shield className="w-6 h-6 text-indigo-600" />
+                        Gestion des Utilisateurs
+                    </h3>
+                    <p className="text-slate-500 text-sm">
+                        Gérez les comptes employés (Ajout, Modification, Suppression).
+                    </p>
+                </div>
+                
+                <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                    <input 
+                        type="text"
+                        placeholder="Rechercher un compte..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-indigo-300 w-48"
+                    />
+                </div>
+            </div>
 
             {/* Add User Form */}
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6">
@@ -169,47 +192,51 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, onUpdateU
 
             {/* User List */}
             <div className="space-y-3">
-                {users.map(user => (
-                    <div key={user.id} className="flex items-center justify-between p-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
-                        <div className="flex items-center gap-3">
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${
-                                user.role === 'ADMIN' ? 'bg-slate-800' : 
-                                user.role === 'MANAGER' ? 'bg-indigo-500' : 'bg-rose-500'
-                            }`}>
-                                <UserIcon className="w-5 h-5" />
-                            </div>
-                            <div>
-                                <div className="font-bold text-slate-800">{user.name} <span className="text-slate-400 font-normal">(@{user.username})</span></div>
-                                <div className="text-xs font-bold uppercase tracking-wide mt-0.5">
-                                    <span className={`px-2 py-0.5 rounded ${
-                                        user.role === 'ADMIN' ? 'bg-slate-100 text-slate-600' : 
-                                        user.role === 'MANAGER' ? 'bg-indigo-50 text-indigo-600' : 'bg-rose-50 text-rose-600'
-                                    }`}>
-                                        {user.role === 'CASHIER' ? 'Caissier(e)' : user.role}
-                                    </span>
+                {filteredUsers.length === 0 ? (
+                     <div className="p-4 text-center text-slate-400 italic">Aucun utilisateur trouvé.</div>
+                ) : (
+                    filteredUsers.map(user => (
+                        <div key={user.id} className="flex items-center justify-between p-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+                            <div className="flex items-center gap-3">
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${
+                                    user.role === 'ADMIN' ? 'bg-slate-800' : 
+                                    user.role === 'MANAGER' ? 'bg-indigo-500' : 'bg-rose-500'
+                                }`}>
+                                    <UserIcon className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <div className="font-bold text-slate-800">{user.name} <span className="text-slate-400 font-normal">(@{user.username})</span></div>
+                                    <div className="text-xs font-bold uppercase tracking-wide mt-0.5">
+                                        <span className={`px-2 py-0.5 rounded ${
+                                            user.role === 'ADMIN' ? 'bg-slate-100 text-slate-600' : 
+                                            user.role === 'MANAGER' ? 'bg-indigo-50 text-indigo-600' : 'bg-rose-50 text-rose-600'
+                                        }`}>
+                                            {user.role === 'CASHIER' ? 'Caissier(e)' : user.role}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <button 
-                                onClick={() => startEditing(user)}
-                                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                title="Modifier"
-                            >
-                                <Edit2 className="w-5 h-5" />
-                            </button>
-                            {user.id !== currentUser.id && (
+                            <div className="flex items-center gap-2">
                                 <button 
-                                    onClick={() => handleDeleteUser(user.id)}
-                                    className="p-2 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                    title="Supprimer"
+                                    onClick={() => startEditing(user)}
+                                    className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                    title="Modifier"
                                 >
-                                    <Trash2 className="w-5 h-5" />
+                                    <Edit2 className="w-5 h-5" />
                                 </button>
-                            )}
+                                {user.id !== currentUser.id && (
+                                    <button 
+                                        onClick={() => handleDeleteUser(user.id)}
+                                        className="p-2 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                        title="Supprimer"
+                                    >
+                                        <Trash2 className="w-5 h-5" />
+                                    </button>
+                                )}
+                            </div>
                         </div>
-                    </div>
-                ))}
+                    ))
+                )}
             </div>
 
             {/* EDIT MODAL */}

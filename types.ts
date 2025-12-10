@@ -47,14 +47,31 @@ export interface PaymentMethodDef {
   color: 'blue' | 'green' | 'orange' | 'slate' | 'red' | 'indigo';
 }
 
+export interface SalePayment {
+    id: string;
+    amount: number;
+    method: PaymentMethodType;
+    date: string;
+}
+
+export type SaleStatus = 'PAID' | 'PARTIAL' | 'UNPAID';
+
 export interface Sale {
   id: string;
   items: SaleItem[];
   subTotal: number; // Prix avant remise
   discount: number; // Montant de la remise
-  totalPrice: number; // Prix final payé
+  totalPrice: number; // Prix final à payer
   date: string; 
-  paymentMethod: PaymentMethodType;
+  
+  // New Payment Architecture
+  payments: SalePayment[];
+  balance: number; // Reste à payer
+  status: SaleStatus;
+  
+  // Legacy fields (kept for compatibility during migration, but mostly replaced by payments array)
+  paymentMethod?: PaymentMethodType;
+  
   clientId?: string;
   clientName?: string;
 }
