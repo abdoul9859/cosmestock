@@ -13,7 +13,6 @@ import { Reports } from './components/Reports';
 import { AuditLogs } from './components/AuditLogs';
 import { Login } from './components/Login';
 import { LayoutDashboard, ShoppingBag, Import, Menu, X, Plus, Save, TrendingUp, Settings as SettingsIcon, Image as ImageIcon, Upload, ShoppingCart, ScanLine, Users, Wallet, BarChart3, ClipboardList, LogOut } from 'lucide-react';
-import { generateMarketingDescription } from './services/geminiService';
 
 // Default Data
 const DEFAULT_CATEGORIES: Category[] = [
@@ -175,7 +174,6 @@ const App: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [formData, setFormData] = useState<Partial<Product>>({});
-  const [generatingDesc, setGeneratingDesc] = useState(false);
 
   // POS Redirect State
   const [posInitialProduct, setPosInitialProduct] = useState<Product | null>(null);
@@ -369,25 +367,6 @@ const App: React.FC = () => {
     }
     setIsModalOpen(false);
   };
-
-  const handleAiDescription = async () => {
-     if(!formData.name || !formData.categoryId) return;
-     setGeneratingDesc(true);
-     const catName = categories.find(c => c.id === formData.categoryId)?.name || '';
-     const desc = await generateMarketingDescription(formData.name, catName);
-     if(desc) {
-        try {
-            await navigator.clipboard.writeText(desc);
-            alert(`✨ Description suggérée :\n\n"${desc}"\n\n(Copiée dans le presse-papier)`);
-        } catch (error) {
-            console.error(error);
-            alert(`✨ Description suggérée :\n\n"${desc}"`);
-        }
-     } else {
-        alert("Impossible de générer une description.");
-     }
-     setGeneratingDesc(false);
-  }
 
   // POS Handlers
   const handleRedirectToPOS = (product: Product) => {
@@ -839,24 +818,14 @@ const App: React.FC = () => {
 
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Nom du produit</label>
-                            <div className="flex gap-2">
-                                <input 
-                                    required
-                                    type="text" 
-                                    className="flex-1 px-3 py-2 bg-white text-slate-900 border border-slate-300 rounded-lg focus:ring-2 focus:ring-rose-200 focus:border-rose-400 outline-none transition-all placeholder-slate-400"
-                                    value={formData.name || ''}
-                                    onChange={e => setFormData({...formData, name: e.target.value})}
-                                    placeholder="Ex: Crème de jour"
-                                />
-                                <button 
-                                    type="button" 
-                                    onClick={handleAiDescription}
-                                    disabled={generatingDesc || !formData.name}
-                                    className="px-3 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors"
-                                >
-                                    {generatingDesc ? '...' : 'IA ✨'}
-                                </button>
-                            </div>
+                            <input 
+                                required
+                                type="text" 
+                                className="w-full px-3 py-2 bg-white text-slate-900 border border-slate-300 rounded-lg focus:ring-2 focus:ring-rose-200 focus:border-rose-400 outline-none transition-all placeholder-slate-400"
+                                value={formData.name || ''}
+                                onChange={e => setFormData({...formData, name: e.target.value})}
+                                placeholder="Ex: Crème de jour"
+                            />
                         </div>
 
                         {/* Category */}
