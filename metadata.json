@@ -1,0 +1,7 @@
+{
+  "name": "CosméStock - Gestion Facile",
+  "description": "Une application de gestion de stock intuitive pour boutique de cosmétique et mode, avec assistance IA et import facile.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
