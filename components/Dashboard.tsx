@@ -1,14 +1,15 @@
+
 import React, { useEffect, useState } from 'react';
-import { InventoryStats, Product, Sale } from '../types';
-import { Package, AlertTriangle, CalendarX, TrendingUp, Sparkles, Loader2, DollarSign } from 'lucide-react';
-import { getInventoryInsights } from '../services/geminiService';
+import { InventoryStats, Product, Sale, Expense } from '../types';
+import { Package, AlertTriangle, TrendingUp, DollarSign, Wallet, ArrowUpRight } from 'lucide-react';
 
 interface DashboardProps {
   products: Product[];
   sales: Sale[];
+  expenses: Expense[];
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ products, sales }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ products, sales, expenses }) => {
   const [stats, setStats] = useState<InventoryStats>({
     totalProducts: 0,
     totalValue: 0,
@@ -17,11 +18,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, sales }) => {
     expiringSoonCount: 0,
     totalSales: 0
   });
-  const [aiAdvice, setAiAdvice] = useState<string | null>(null);
-  const [loadingAi, setLoadingAi] = useState(false);
+
+  const [weeklySalesData, setWeeklySalesData] = useState<{date: string, total: number}[]>([]);
+  const [categoryDistribution, setCategoryDistribution] = useState<{name: string, count: number, percent: number}[]>([]);
 
   useEffect(() => {
-    // Calculate Stats
+    // 1. Calculate Basic Stats
     const now = new Date();
     const thirtyDaysFromNow = new Date();
     thirtyDaysFromNow.setDate(now.getDate() + 30);
@@ -30,6 +32,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, sales }) => {
     let lowStock = 0;
     let expired = 0;
     let expiringSoon = 0;
+
+    const catCounts: Record<string, number> = {};
 
     products.forEach(p => {
       totalVal += p.price * p.quantity;
@@ -43,6 +47,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, sales }) => {
           expiringSoon++;
         }
       }
+
+      // Count for categories
+      const cat = p.categoryName || 'Autre';
+      catCounts[cat] = (catCounts[cat] || 0) + 1;
     });
 
     const totalSalesRevenue = sales.reduce((acc, sale) => acc + sale.totalPrice, 0);
@@ -55,100 +63,186 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, sales }) => {
       expiringSoonCount: expiringSoon,
       totalSales: totalSalesRevenue
     });
+
+    // 2. Prepare Category Data
+    const catData = Object.entries(catCounts).map(([name, count]) => ({
+        name,
+        count,
+        percent: products.length > 0 ? (count / products.length) * 100 : 0
+    })).sort((a,b) => b.count - a.count).slice(0, 5); // Top 5
+    setCategoryDistribution(catData);
+
+    // 3. Prepare Weekly Sales Chart Data
+    const last7Days = Array.from({length: 7}, (_, i) => {
+        const d = new Date();
+        d.setDate(d.getDate() - (6 - i)); // -6, -5, ... -0
+        return d.toISOString().split('T')[0];
+    });
+
+    const chartData = last7Days.map(date => {
+        // Simple string match on date part
+        const daySales = sales.filter(s => s.date.startsWith(date));
+        const total = daySales.reduce((sum, s) => sum + s.totalPrice, 0);
+        return { date, total };
+    });
+    setWeeklySalesData(chartData);
+
   }, [products, sales]);
 
-  const askAi = async () => {
-    setLoadingAi(true);
-    const advice = await getInventoryInsights(products);
-    setAiAdvice(advice);
-    setLoadingAi(false);
+  const formatMoney = (amount: number) => {
+    return amount.toLocaleString('fr-FR') + ' F';
   };
 
-  const formatMoney = (amount: number) => {
-    return amount.toLocaleString('fr-FR') + ' FCFA';
-  };
+  const totalExpensesAmount = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const currentCashFlow = stats.totalSales - totalExpensesAmount;
+
+  // Find max value for bar chart scaling
+  const maxSaleDay = Math.max(...weeklySalesData.map(d => d.total), 1);
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in pb-20">
+      
+      {/* Top Cards Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Stock */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-500">Total Produits</p>
-            <p className="text-2xl font-bold text-slate-800">{stats.totalProducts}</p>
-          </div>
-          <div className="bg-blue-50 p-3 rounded-full">
-            <Package className="w-6 h-6 text-blue-600" />
-          </div>
+        {/* Total Sales */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex flex-col justify-between h-32 relative overflow-hidden group">
+            <div className="flex justify-between items-start z-10">
+                <div>
+                    <p className="text-sm font-medium text-slate-500">Chiffre d'Affaires</p>
+                    <p className="text-2xl font-bold text-slate-800">{formatMoney(stats.totalSales)}</p>
+                </div>
+                <div className="bg-green-50 p-2 rounded-lg text-green-600">
+                    <DollarSign className="w-5 h-5" />
+                </div>
+            </div>
+            <div className="z-10 flex items-center gap-1 text-xs text-green-600 font-medium">
+                <ArrowUpRight className="w-3 h-3" /> Revenu brut
+            </div>
+            <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-green-50 rounded-full opacity-50 group-hover:scale-110 transition-transform"></div>
         </div>
 
-        {/* Total Sales */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-500">Ventes Totales</p>
-            <p className="text-2xl font-bold text-slate-800">{formatMoney(stats.totalSales)}</p>
-          </div>
-          <div className="bg-green-50 p-3 rounded-full">
-            <DollarSign className="w-6 h-6 text-green-600" />
-          </div>
+        {/* Current Cash Flow */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex flex-col justify-between h-32 relative overflow-hidden group">
+             <div className="flex justify-between items-start z-10">
+                <div>
+                    <p className="text-sm font-medium text-slate-500">Solde Caisse (Net)</p>
+                    <p className={`text-2xl font-bold ${currentCashFlow >= 0 ? 'text-indigo-700' : 'text-red-600'}`}>
+                        {formatMoney(currentCashFlow)}
+                    </p>
+                </div>
+                <div className="bg-indigo-50 p-2 rounded-lg text-indigo-600">
+                    <Wallet className="w-5 h-5" />
+                </div>
+            </div>
+            <div className="z-10 text-xs text-slate-400">
+                Après dépenses ({formatMoney(totalExpensesAmount)})
+            </div>
+            <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-indigo-50 rounded-full opacity-50 group-hover:scale-110 transition-transform"></div>
         </div>
 
         {/* Stock Value */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-500">Valeur du Stock</p>
-            <p className="text-2xl font-bold text-slate-800">{formatMoney(stats.totalValue)}</p>
-          </div>
-          <div className="bg-emerald-50 p-3 rounded-full">
-            <TrendingUp className="w-6 h-6 text-emerald-600" />
-          </div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex flex-col justify-between h-32 relative overflow-hidden group">
+             <div className="flex justify-between items-start z-10">
+                <div>
+                    <p className="text-sm font-medium text-slate-500">Valeur Stock</p>
+                    <p className="text-2xl font-bold text-slate-800">{formatMoney(stats.totalValue)}</p>
+                </div>
+                <div className="bg-blue-50 p-2 rounded-lg text-blue-600">
+                    <TrendingUp className="w-5 h-5" />
+                </div>
+            </div>
+            <div className="z-10 text-xs text-slate-400">
+                {stats.totalProducts} produits en rayon
+            </div>
+            <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-blue-50 rounded-full opacity-50 group-hover:scale-110 transition-transform"></div>
         </div>
 
-        {/* Low Stock Alert */}
-        <div className={`p-6 rounded-xl shadow-sm border flex items-center justify-between ${stats.lowStockCount > 0 ? 'bg-orange-50 border-orange-100' : 'bg-white border-slate-100'}`}>
-          <div>
-            <p className={`text-sm font-medium ${stats.lowStockCount > 0 ? 'text-orange-700' : 'text-slate-500'}`}>Stock Faible</p>
-            <p className={`text-2xl font-bold ${stats.lowStockCount > 0 ? 'text-orange-800' : 'text-slate-800'}`}>{stats.lowStockCount}</p>
-          </div>
-          <div className={`p-3 rounded-full ${stats.lowStockCount > 0 ? 'bg-orange-200' : 'bg-orange-50'}`}>
-            <AlertTriangle className={`w-6 h-6 ${stats.lowStockCount > 0 ? 'text-orange-700' : 'text-orange-600'}`} />
-          </div>
+        {/* Low Stock */}
+        <div className={`p-6 rounded-xl shadow-sm border flex flex-col justify-between h-32 relative overflow-hidden transition-colors ${stats.lowStockCount > 0 ? 'bg-orange-50 border-orange-100' : 'bg-white border-slate-100'}`}>
+            <div className="flex justify-between items-start z-10">
+                <div>
+                    <p className={`text-sm font-medium ${stats.lowStockCount > 0 ? 'text-orange-800' : 'text-slate-500'}`}>Alerte Stock</p>
+                    <p className={`text-2xl font-bold ${stats.lowStockCount > 0 ? 'text-orange-900' : 'text-slate-800'}`}>{stats.lowStockCount}</p>
+                </div>
+                <div className={`p-2 rounded-lg ${stats.lowStockCount > 0 ? 'bg-orange-200 text-orange-800' : 'bg-slate-50 text-slate-500'}`}>
+                    <AlertTriangle className="w-5 h-5" />
+                </div>
+            </div>
+            <div className="z-10 text-xs opacity-70">
+                Produits à réapprovisionner
+            </div>
         </div>
       </div>
 
-      {/* AI Assistant Section */}
-      <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-6 border border-indigo-100">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-indigo-900 flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-indigo-600" />
-            L'Assistant Intelligent
-          </h3>
-          <button 
-            onClick={askAi}
-            disabled={loadingAi}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
-          >
-            {loadingAi ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Analyser mon stock'}
-          </button>
-        </div>
-        
-        {aiAdvice ? (
-           <div className="bg-white/80 p-4 rounded-lg text-indigo-900 text-sm leading-relaxed whitespace-pre-line border border-indigo-100">
-             {aiAdvice}
-           </div>
-        ) : (
-          <p className="text-indigo-700/70 text-sm">
-            Cliquez sur "Analyser mon stock" pour recevoir des conseils personnalisés basés sur vos produits (promotions suggérées, réapprovisionnement, etc.).
-          </p>
-        )}
+      {/* Middle Section: Charts & Stats */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* Weekly Sales Chart */}
+          <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+              <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-rose-500" />
+                  Ventes des 7 derniers jours
+              </h3>
+              
+              <div className="h-64 flex items-end gap-2 sm:gap-4">
+                  {weeklySalesData.map((d, i) => {
+                      const heightPercent = Math.max((d.total / maxSaleDay) * 100, 5); // Min 5% height
+                      const dayName = new Date(d.date).toLocaleDateString('fr-FR', { weekday: 'short' });
+                      
+                      return (
+                          <div key={i} className="flex-1 flex flex-col items-center group">
+                                <div className="w-full relative flex flex-col justify-end h-full">
+                                    <div 
+                                        style={{ height: `${heightPercent}%` }} 
+                                        className="w-full bg-rose-100 hover:bg-rose-500 transition-all duration-500 rounded-t-lg relative group-hover:shadow-lg"
+                                    >
+                                        {/* Tooltip */}
+                                        <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-xs py-1 px-2 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
+                                            {formatMoney(d.total)}
+                                        </div>
+                                    </div>
+                                </div>
+                                <span className="text-xs text-slate-400 mt-2 font-medium uppercase">{dayName}</span>
+                          </div>
+                      )
+                  })}
+              </div>
+          </div>
+
+          {/* Category Distribution */}
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+              <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
+                  <Package className="w-5 h-5 text-indigo-500" />
+                  Répartition Stock
+              </h3>
+              <div className="space-y-6">
+                  {categoryDistribution.map((cat, i) => (
+                      <div key={i}>
+                          <div className="flex justify-between text-sm mb-1">
+                              <span className="font-medium text-slate-700">{cat.name}</span>
+                              <span className="text-slate-500">{cat.count} produits ({Math.round(cat.percent)}%)</span>
+                          </div>
+                          <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                              <div 
+                                className="bg-indigo-500 h-2.5 rounded-full" 
+                                style={{ width: `${cat.percent}%` }}
+                              ></div>
+                          </div>
+                      </div>
+                  ))}
+                  {categoryDistribution.length === 0 && (
+                      <p className="text-slate-400 text-sm italic">Aucune donnée de catégorie.</p>
+                  )}
+              </div>
+          </div>
       </div>
 
-        {/* Quick Lists */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Bottom Lists */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
                 <h3 className="font-semibold text-slate-800 mb-4">Produits expirant bientôt (30j)</h3>
                 {stats.expiringSoonCount === 0 && stats.expiredCount === 0 ? (
-                    <p className="text-slate-400 text-sm italic">Tout est frais ! Aucun produit n'expire bientôt.</p>
+                    <p className="text-slate-400 text-sm italic bg-slate-50 p-4 rounded-lg text-center">Tout est frais ! Aucun produit n'expire bientôt.</p>
                 ) : (
                     <ul className="space-y-3">
                         {products
@@ -181,7 +275,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, sales }) => {
              <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-6">
                 <h3 className="font-semibold text-slate-800 mb-4">Stock Critique</h3>
                  {stats.lowStockCount === 0 ? (
-                    <p className="text-slate-400 text-sm italic">Stocks sains. Aucun produit sous le seuil.</p>
+                    <p className="text-slate-400 text-sm italic bg-slate-50 p-4 rounded-lg text-center">Stocks sains. Aucun produit sous le seuil.</p>
                 ) : (
                     <ul className="space-y-3">
                         {products

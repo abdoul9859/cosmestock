@@ -348,13 +348,14 @@ const App: React.FC = () => {
     } as Product;
 
     if (editingProduct) {
-        setProducts(products.map(p => p.id === editingProduct.id ? { ...p, ...finalProductData } : p));
-        
-        // Detailed Logging for Edit
+        // Log changes
         const changes: string[] = [];
         if(editingProduct.price !== finalProductData.price) changes.push(`Prix (${editingProduct.price}➔${finalProductData.price})`);
         if(editingProduct.quantity !== finalProductData.quantity) changes.push(`Stock (${editingProduct.quantity}➔${finalProductData.quantity})`);
         if(editingProduct.name !== finalProductData.name) changes.push(`Nom modifié`);
+        if(editingProduct.purchasePrice !== finalProductData.purchasePrice) changes.push(`Prix Achat (${editingProduct.purchasePrice}➔${finalProductData.purchasePrice})`);
+
+        setProducts(products.map(p => p.id === editingProduct.id ? { ...p, ...finalProductData } : p));
         
         const changeMsg = changes.length > 0 ? changes.join(', ') : 'Mise à jour mineure';
         logAction('STOCK', `Modification produit "${finalProductData.name}" : ${changeMsg}`);
@@ -733,7 +734,7 @@ const App: React.FC = () => {
                     </h2>
                 </div>
 
-                {view === 'DASHBOARD' && canSeeDashboard && <Dashboard products={products} sales={sales} />}
+                {view === 'DASHBOARD' && canSeeDashboard && <Dashboard products={products} sales={sales} expenses={expenses} />}
                 
                 {view === 'REPORTS' && canSeeReports && <Reports products={products} sales={sales} expenses={expenses} clients={clients} />}
                 
